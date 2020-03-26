@@ -1,6 +1,8 @@
+from hashlib import sha1
 from threading import Thread
 import socket
 from time import sleep, time
+import uuid
 
 
 class DHT:
@@ -8,6 +10,7 @@ class DHT:
         self.__communication_command = bytes(command, encoding='utf8')
         self.__enable_ipv4 = enable_ipv4
         self.__enable_ipv6 = enable_ipv6
+        self.__node_id = sha1(self.__get_mac() + str(time())).digest()
         self.__node_list = dict()
         self.__node_clear_thread = Thread(target=DHT.__clear_nodes, daemon=True)
         if self.__enable_ipv4:
@@ -20,7 +23,7 @@ class DHT:
             self.__communication_socket6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
             self.__communication_socket6.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             self.__communication_listen_thread6 = Thread(target=DHT.__listen_nodes, args=(self, self.__communication_socket6), daemon=True)
-            self.__communication_send_thread6 = Thread(target=DHT.__send_self, args=(self, self.__communication_socket6, port), daemon=True)
+            self.__communication_send_thread6 = Thread(target=DHT.__send_self, args=(self, self.__communication_socket6, port6), daemon=True)
 
     def join_dht(self):
         if self.__enable_ipv4:
@@ -30,6 +33,11 @@ class DHT:
             self.__communication_listen_thread6.start()
             self.__communication_send_thread6.start()
         self.__node_clear_thread.start()
+
+    @staticmethod
+    def __get_mac():
+        address = hex(uuid.getnode())[2:]
+        return '-'.join(address[i:i + 2] for i in range(0, len(address), 2))
 
     def __send_self(self, sock, port):
         while True:
