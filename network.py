@@ -1,6 +1,7 @@
 import json
 import socket
 import uuid
+from bisect import insort_left
 from hashlib import sha3_512
 from threading import Thread
 from time import sleep, time
@@ -12,6 +13,7 @@ class Network:
     __error_ipv4_disabled = 'IPv4 is disabled.'
     __error_ipv6_disabled = 'IPv6 is disabled.'
     __error_announce_data = 'Receive error announce data.'
+    __error_node_info_data = 'Receive error node information.'
 
     def __init__(self, enable_ipv4=True, enable_ipv6=True, port=10129, port6=10129):
         self.__enable_ipv4 = enable_ipv4
@@ -78,7 +80,7 @@ class Network:
         addresses = ['<broadcast>'] if self.__node_list == [] else self.__node_list
         while True:
             for address in addresses:
-                sock.sendto(('{"type": "announce", "id": %s}' % self.__node_id).encode('utf8'), (address, port))
+                sock.sendto(('{"type": "announce", "id": "%s"}' % self.__node_id).encode('utf8'), (address, port))
             sleep(10.0)
 
     def __echo(self, sock):
@@ -88,8 +90,19 @@ class Network:
             if 'type' in info.keys():
                 if info['type'] == 'announce':
                     try:
-                        latency = ping(addr[0])
-                        self.__node_list.append((latency, addr, info['id']))
-                        self.__node_list.sort(key=lambda node: node[0])
+                        Thread(target=Network.__add_node, args=(self, info['id'], addr), daemon=True).start()
+                        for node in self.__node_list:
+                            sock.sendto(('{"type": "node_info", "id": "%s", "addr": "%s", "port": %d}' % (
+                                node['id'], node['addr'][0], node['addr'][1])).encode('utf8'), addr)
                     except Exception:
                         raise Exception(self.__error_announce_data)
+                elif info['type'] == 'node_info':
+                    Thread(target=Network.__add_node, args=(self, info['id'], (info['addr'], info['port'])),
+                           daemon=True).start()
+
+    def __add_node(self, node_id, addr):
+        try:
+            latency = ping(addr[0])
+            insort_left(self.__node_list, (latency, addr, node_id))
+        except Exception:
+            raise Exception(self.__error_node_info_data)
