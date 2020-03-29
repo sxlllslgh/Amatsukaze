@@ -14,12 +14,14 @@ class Network:
     __error_ipv6_disabled = 'IPv6 is disabled.'
     __error_announce_data = 'Receive error announce data.'
     __error_node_info_data = 'Receive error node information.'
+    __error_unexpected_echo = 'Receive unexpected resource echo.'
 
     def __init__(self, enable_ipv4=True, enable_ipv6=True, port=10129, port6=10129):
         self.__enable_ipv4 = enable_ipv4
         self.__enable_ipv6 = enable_ipv6
         self.__node_id = sha3_512((self.__get_mac() + str(time())).encode('utf8')).hexdigest()
         self.__node_list = []
+        self.__groups = dict()
         if self.__enable_ipv4:
             self.__communication_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.__communication_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -56,11 +58,16 @@ class Network:
             else:
                 raise Exception(self.__error_ipv6_disabled)
 
-    def create_resource(self):
-        pass
+    def create_resource(self, site, room):
+        if site == 'bilibili':
+            resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
+            self.__groups[resource_id] = [self.__node_id]
+            self.query_resource(resource_id)
+            sleep(self.__node_list[-1][0] * 3000.0)
 
-    def query_resource(self):
-        pass
+    def query_resource(self, resource_id):
+        for node in self.__node_list:
+            Thread(args=(self.__communication_socket, node[1], resource_id), daemon=True).start()
 
     def join_group(self):
         pass
@@ -99,6 +106,14 @@ class Network:
                 elif info['type'] == 'node_info':
                     Thread(target=Network.__add_node, args=(self, info['id'], (info['addr'], info['port'])),
                            daemon=True).start()
+                elif info['type'] == 'query_resource':
+                    if info['id'] in self.__groups:
+                        sock.sendto(('{"type": "echo_resource", "id": "%s", "node_id": "%s"}' % (info['id'], self.__node_id)).encode('utf8'), addr)
+                elif info['type'] == 'echo_resource':
+                    try:
+                        self.__groups[info['id']].append(info['node_id'])
+                    except Exception:
+                        raise Exception(self.__error_unexpected_echo)
 
     def __add_node(self, node_id, addr):
         try:
@@ -106,3 +121,7 @@ class Network:
             insort_left(self.__node_list, (latency, addr, node_id))
         except Exception:
             raise Exception(self.__error_node_info_data)
+
+    @staticmethod
+    def __ask_node(sock, addr, resource_id):
+        sock.sendto(('{"type": "query_resource", "id": "%s"}' % resource_id).encode('utf8'), addr)
