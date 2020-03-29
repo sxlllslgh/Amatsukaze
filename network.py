@@ -6,8 +6,8 @@ from hashlib import sha3_512
 from threading import Thread
 from time import sleep, time
 
-from utils.ping import ping
 from utils.login import login
+from utils.ping import ping
 
 
 class Network:
@@ -60,7 +60,8 @@ class Network:
             else:
                 raise Exception(self.__error_ipv6_disabled)
 
-    def create_resource(self, site, room, username, password, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0, ipv6_upload=0.0):
+    def create_resource(self, site, room, username, password, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0,
+                        ipv6_upload=0.0):
         cookie = login(site, username, password)
         resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
         self.__groups[resource_id] = {
@@ -96,7 +97,9 @@ class Network:
     def quit_group(self, site, room):
         resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
         for node in self.__groups[resource_id]['nodes']:
-            self.__communication_socket.sendto(('{"type": "quit", "id": "%s", "node_id": "%s"}' % (resource_id, self.__node_id)).encode('utf8'), node['addr'])
+            self.__communication_socket.sendto(
+                ('{"type": "quit", "id": "%s", "node_id": "%s"}' % (resource_id, self.__node_id)).encode('utf8'),
+                node['addr'])
 
     @staticmethod
     def __get_mac():
@@ -128,7 +131,8 @@ class Network:
                            daemon=True).start()
                 elif info['type'] == 'query_resource':
                     if info['id'] in self.__groups:
-                        sock.sendto(('{"type": "echo_resource", "id": "%s", "node_id": "%s"}' % (info['id'], self.__node_id)).encode('utf8'), addr)
+                        sock.sendto(('{"type": "echo_resource", "id": "%s", "node_id": "%s"}' % (
+                        info['id'], self.__node_id)).encode('utf8'), addr)
                 elif info['type'] == 'echo_resource':
                     try:
                         self.__groups[info['id']].append(info['node_id'])
@@ -152,7 +156,8 @@ class Network:
 
     def __query_resource(self, resource_id):
         for node in self.__node_list:
-            Thread(target=Network.__ask_node, args=(self.__communication_socket, node[1], resource_id), daemon=True).start()
+            Thread(target=Network.__ask_node, args=(self.__communication_socket, node[1], resource_id),
+                   daemon=True).start()
 
     def __play_stream(self, resource_id):
         pass

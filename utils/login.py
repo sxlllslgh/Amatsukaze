@@ -1,2 +1,9 @@
+from utils.login_sites.bilibili import Bilibili
+
+
 def login(site, username, password):
-    return None
+    cookie = None
+    if site == 'bilibili':
+        client = Bilibili(username, password)
+        cookie = client.cookie()
+    return cookie
