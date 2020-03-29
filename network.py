@@ -7,6 +7,7 @@ from threading import Thread
 from time import sleep, time
 
 from utils.ping import ping
+from utils.login import login
 
 
 class Network:
@@ -15,6 +16,7 @@ class Network:
     __error_announce_data = 'Receive error announce data.'
     __error_node_info_data = 'Receive error node information.'
     __error_unexpected_echo = 'Receive unexpected resource echo.'
+    __error_no_resource = 'Resource requested does not exist.'
 
     def __init__(self, enable_ipv4=True, enable_ipv6=True, port=10129, port6=10129):
         self.__enable_ipv4 = enable_ipv4
@@ -58,25 +60,43 @@ class Network:
             else:
                 raise Exception(self.__error_ipv6_disabled)
 
-    def create_resource(self, site, room):
-        if site == 'bilibili':
-            resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
-            self.__groups[resource_id] = [self.__node_id]
-            self.query_resource(resource_id)
-            sleep(self.__node_list[-1][0] * 3000.0)
+    def create_resource(self, site, room, username, password, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0, ipv6_upload=0.0):
+        cookie = login(site, username, password)
+        resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
+        self.__groups[resource_id] = {
+            'cookie': cookie,
+            'strategy': {
+                'ipv4': {
+                    'download': ipv4_download,
+                    'upload': ipv4_upload
+                },
+                'ipv6': {
+                    'download': ipv6_download,
+                    'upload': ipv6_upload
+                }
+            },
+            'nodes': []
+        }
+        self.__query_resource(resource_id)
+        sleep(self.__node_list[-1][0] * 3000.0)
 
-    def query_resource(self, resource_id):
-        for node in self.__node_list:
-            Thread(args=(self.__communication_socket, node[1], resource_id), daemon=True).start()
+    def play(self, site, room, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0, ipv6_upload=0.0):
+        resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
+        if resource_id not in self.__groups:
+            self.create_resource(site, room, ipv4_download, ipv4_upload, ipv6_download, ipv6_upload)
+        self.__play_stream(resource_id)
 
-    def join_group(self):
-        pass
+    def update_strategy(self, site, room, protocol, direction, limit):
+        resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
+        if resource_id in self.__groups:
+            self.__groups[resource_id][protocol][direction] = limit
+        else:
+            raise Exception(self.__error_no_resource)
 
-    def update_strategy(self):
-        pass
-
-    def quit_group(self):
-        pass
+    def quit_group(self, site, room):
+        resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
+        for node in self.__groups[resource_id]['nodes']:
+            self.__communication_socket.sendto(('{"type": "quit", "id": "%s", "node_id": "%s"}' % (resource_id, self.__node_id)).encode('utf8'), node['addr'])
 
     @staticmethod
     def __get_mac():
@@ -114,6 +134,10 @@ class Network:
                         self.__groups[info['id']].append(info['node_id'])
                     except Exception:
                         raise Exception(self.__error_unexpected_echo)
+                elif info['type'] == 'quit':
+                    if info['id'] in self.__groups:
+                        if info['node_id'] in self.__groups[info['id']]['nodes']:
+                            del self.__groups[info['id']]['nodes'][info['node_id']]
 
     def __add_node(self, node_id, addr):
         try:
@@ -125,3 +149,10 @@ class Network:
     @staticmethod
     def __ask_node(sock, addr, resource_id):
         sock.sendto(('{"type": "query_resource", "id": "%s"}' % resource_id).encode('utf8'), addr)
+
+    def __query_resource(self, resource_id):
+        for node in self.__node_list:
+            Thread(target=Network.__ask_node, args=(self.__communication_socket, node[1], resource_id), daemon=True).start()
+
+    def __play_stream(self, resource_id):
+        pass
