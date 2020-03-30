@@ -6,7 +6,9 @@ from hashlib import sha3_512
 from threading import Thread
 from time import sleep, time
 
-from utils.login import login
+import requests
+
+from utils.live import get_live_url
 from utils.ping import ping
 
 
@@ -62,10 +64,11 @@ class Network:
 
     def create_resource(self, site, room, username, password, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0,
                         ipv6_upload=0.0):
-        cookie = login(site, username, password)
+        # cookie = login(site, username, password)
         resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
         self.__groups[resource_id] = {
-            'cookie': cookie,
+            'cookie': None,
+            'url': get_live_url(site, room),
             'strategy': {
                 'ipv4': {
                     'download': ipv4_download,
@@ -160,4 +163,4 @@ class Network:
                    daemon=True).start()
 
     def __play_stream(self, resource_id):
-        pass
+        response = requests.get(self.__groups[resource_id]['url'], headers={'Referer': 'https://live.bilibili.com', }, stream=True, verify=False)
