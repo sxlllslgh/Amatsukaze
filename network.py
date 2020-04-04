@@ -82,7 +82,8 @@ class Network:
             'nodes': []
         }
         self.__query_resource(resource_id)
-        sleep(self.__node_list[-1][0] * 3000.0)
+        if len(self.__node_list) > 0:
+            sleep(self.__node_list[-1][0] * 3000.0)
 
     def play(self, site, room, ipv4_download=0.0, ipv4_upload=0.0, ipv6_download=0.0, ipv6_upload=0.0):
         resource_id = sha3_512((site + str(room)).encode('utf8')).hexdigest()
@@ -110,7 +111,7 @@ class Network:
         return '-'.join(address[i:i + 2] for i in range(0, len(address), 2))
 
     def __announce_self(self, sock, port):
-        addresses = ['<broadcast>'] if self.__node_list == [] else self.__node_list
+        addresses = ['<broadcast>'] if not self.__node_list else self.__node_list
         while True:
             for address in addresses:
                 sock.sendto(('{"type": "announce", "id": "%s"}' % self.__node_id).encode('utf8'), (address, port))
@@ -119,16 +120,17 @@ class Network:
     def __echo(self, sock):
         while True:
             data, addr = sock.recvfrom(1024)
-            info = json.load(data)
+            info = json.loads(data.decode())
             if 'type' in info.keys():
                 if info['type'] == 'announce':
-                    try:
-                        Thread(target=Network.__add_node, args=(self, info['id'], addr), daemon=True).start()
-                        for node in self.__node_list:
-                            sock.sendto(('{"type": "node_info", "id": "%s", "addr": "%s", "port": %d}' % (
-                                node['id'], node['addr'][0], node['addr'][1])).encode('utf8'), addr)
-                    except Exception:
-                        raise Exception(self.__error_announce_data)
+                    if info['id'] != self.__node_id:
+                        try:
+                            Thread(target=Network.__add_node, args=(self, info['id'], addr), daemon=True).start()
+                            for node in self.__node_list:
+                                sock.sendto(('{"type": "node_info", "id": "%s", "addr": "%s", "port": %d}' % (
+                                    node['id'], node['addr'][0], node['addr'][1])).encode('utf8'), addr)
+                        except Exception:
+                            raise Exception(self.__error_announce_data)
                 elif info['type'] == 'node_info':
                     Thread(target=Network.__add_node, args=(self, info['id'], (info['addr'], info['port'])),
                            daemon=True).start()
@@ -164,3 +166,4 @@ class Network:
 
     def __play_stream(self, resource_id):
         response = requests.get(self.__groups[resource_id]['url'], headers={'Referer': 'https://live.bilibili.com', }, stream=True, verify=False)
+        print(response.content())
